@@ -1,7 +1,7 @@
-const { App, LogLevel } = require('@slack/bolt');
-const { createClient } = require('redis');
+const { App } = require('@slack/bolt');
+const { createClient } = require('@supabase/supabase-js');
 
-const redis = createClient({ url: process.env.REDIS_URL });
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
 const app = new App({
   token: process.env.SLACK_BOT_TOKEN,
@@ -13,7 +13,6 @@ let botUserId = null;
 
 // --- Helpers ---
 
-// Matches bot name as literal text OR as a mention like <@U0B1906DVPZ>
 function stripBotPrefix(text) {
   if (!text) return null;
   const mentionPattern = new RegExp(`^<@${botUserId}>\\s*`, 'i');
@@ -27,13 +26,11 @@ let userCache = null;
 let userCacheTime = 0;
 
 async function findUser(client, identifier) {
-  // If it's a Slack mention like <@U12345>
   const mentionMatch = identifier.match(/^<@(\w+)>$/);
   if (mentionMatch) {
     return { id: mentionMatch[1] };
   }
 
-  // Otherwise look up by name
   if (!userCache || Date.now() - userCacheTime > 5 * 60 * 1000) {
     const result = await client.users.list();
     userCache = result.members.filter(m => !m.deleted && !m.is_bot);
@@ -49,9 +46,26 @@ async function findUser(client, identifier) {
   );
 }
 
+async function getScore(userId) {
+  const { data } = await supabase
+    .from('karma')
+    .select('score')
+    .eq('user_id', userId)
+    .single();
+  return data?.score || 0;
+}
+
+async function changeScore(userId, delta) {
+  const current = await getScore(userId);
+  const newScore = current + delta;
+  await supabase
+    .from('karma')
+    .upsert({ user_id: userId, score: newScore });
+  return newScore;
+}
+
 // --- Karma (++/--) ---
 
-// Matches both: "naman++" and "<@U12345>++"
 const karmaPattern = /(<@\w+>|[\w.\-]+)\s*(\+\+|--)/g;
 
 const karmaResponses = [
@@ -84,7 +98,7 @@ app.message(karmaPattern, async ({ message, say, client }) => {
     }
 
     const delta = op === '++' ? 1 : -1;
-    const newScore = await redis.incrBy(`karma:${userInfo.id}`, delta);
+    const newScore = await changeScore(userInfo.id, delta);
 
     if (op === '++') {
       const response = karmaResponses[Math.floor(Math.random() * karmaResponses.length)];
@@ -104,22 +118,18 @@ app.message(/leaderboard/i, async ({ message, say }) => {
   const cmd = stripBotPrefix(message.text);
   if (cmd === null || !/^leaderboard$/i.test(cmd.trim())) return;
 
-  const keys = await redis.keys('karma:*');
-  if (!keys.length) {
+  const { data } = await supabase
+    .from('karma')
+    .select('*')
+    .order('score', { ascending: false })
+    .limit(10);
+
+  if (!data || !data.length) {
     await say('No karma yet.');
     return;
   }
 
-  const scores = [];
-  for (const key of keys) {
-    const score = parseInt(await redis.get(key));
-    const userId = key.replace('karma:', '');
-    scores.push({ userId, score });
-  }
-
-  scores.sort((a, b) => b.score - a.score);
-  const top = scores.slice(0, 10);
-  const lines = top.map((s, i) => `${i + 1}. <@${s.userId}> — ${s.score}`);
+  const lines = data.map((s, i) => `${i + 1}. <@${s.user_id}> — ${s.score}`);
   await say(`*Leaderboard*\n${lines.join('\n')}`);
 });
 
@@ -135,7 +145,7 @@ app.message(/score/i, async ({ message, say, client }) => {
     await say(`Couldn't find user "${scoreMatch[1]}"`);
     return;
   }
-  const score = (await redis.get(`karma:${userInfo.id}`)) || 0;
+  const score = await getScore(userInfo.id);
   await say(`<@${userInfo.id}> is at ${score}`);
 });
 
@@ -226,7 +236,6 @@ app.event('message', async ({ event, client }) => {
 // --- Start ---
 
 (async () => {
-  await redis.connect();
   const auth = await app.client.auth.test();
   botUserId = auth.user_id;
   await app.start();
