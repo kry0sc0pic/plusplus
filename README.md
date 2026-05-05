@@ -25,19 +25,20 @@ I left, but that never left me. So I rebuilt the bot for my own team.
 2. Bot token scopes: `chat:write`, `channels:read`, `groups:read`, `im:read`, `users:read`
 3. Subscribe to bot events: `message.channels`, `message.groups`, `message.im`
 4. Generate an app-level token with `connections:write`
+5. Create a Supabase project and run:
+   ```sql
+   create table karma (
+     user_id text primary key,
+     score integer default 0
+   );
+   ```
 
 ```
 cp .env.example .env
+# Fill in your tokens
 docker compose up --build -d
-```
-
-## .env
-
-```
-SLACK_BOT_TOKEN=xoxb-...
-SLACK_APP_TOKEN=xapp-...
 ```
 
 ## Stack
 
-- Node 20, @slack/bolt, Redis, Docker
+- Node 22, @slack/bolt, Supabase, Docker
