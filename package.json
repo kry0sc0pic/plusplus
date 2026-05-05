@@ -1,0 +1,17 @@
+{
+  "name": "vibecoder",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Slack bot for Vera",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@slack/bolt": "^4.1.0",
+    "redis": "^4.6.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
