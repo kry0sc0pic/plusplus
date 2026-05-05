@@ -257,7 +257,7 @@ cron.schedule('30 3 * * *', async () => {
       temperature: 1,
       top_p: 1,
       max_tokens: 16384,
-      extra_body: { chat_template_kwargs: { enable_thinking: true, clear_thinking: false } },
+      extra_body: { chat_template_kwargs: { enable_thinking: false, clear_thinking: false } },
       stream: true,
     });
 
